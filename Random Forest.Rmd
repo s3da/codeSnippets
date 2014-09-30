@@ -1,0 +1,183 @@
+```{r echo=FALSE}
+#Use this to save time while debuggind this .Rmd file
+#load("D:/My Documents/Data Science/8 Practical Machine Learning/assignment/8PMLproject.RData")
+```
+
+Practical Machine Learning
+--------------------------------------
+### Summary
+This project seeks to predict which of 5 manner-types was used to perform weight lifting exercises.  The data was collected by 4 accelerometers (belt, forearm, arm, and dumbbell) worn by 6 study participants who performed each exercise. 
+
+Three models were tested.  A random forest model using principal components (95% variance explained) and bootstrap resampling achieved the greatest accuracy at .9745. This model was used on the 20 case test data set. 
+
+A random forest model using cross validation resampling achieved .9735 accuracy and took lesss than half the time to process (14 minutes versus 33 minutes) on a desktop with a 6-core AMD Vishera processor and 16GB of Ram. The same principal components were used as before.
+
+A classification tree (rpart) was unable to classify one of the factor levels though had a very short processing time - about 2 mins.
+
+### Data Processing
+The data set comes from the study described in [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf) and also at this [web page](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises).
+
+[Training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [testing](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) data were downloaded (on 7/15/2014) and loaded.  
+```{r message=FALSE}
+training<-read.csv("pml-training.csv", 
+        header = TRUE,
+        nrows = 19650)
+testing<-read.csv(file="pml-testing.csv", stringsAsFactors=F, na.strings="unknown", header = TRUE)
+
+library(ggplot2)
+library(lattice)
+library(caret)
+library(randomForest)
+library(rpart)
+library(rattle)
+```
+Needed libraries were loaded. Readers should note that most figures in the text are the result of Inline R Code, which can be confirmed by reviewing the .Rmd file that generated this report.
+
+### Exploratory Analysis and Results
+The dimensions for training and testing data are `r dim(training)` and `r dim(testing)`.
+
+```{r}
+# how many variables for each of the 4 accelerometers?
+forearm<-length(grep("forearm",names(training)))
+dumbell<-length(grep("dumbbell",names(training)))
+arm<-length(grep("_arm",names(training)))
+belt<-length(grep("belt",names(training)))
+# accelerometers account for 152. The remaining 8 are easy 
+# to classify manually
+```
+
+The 160 variables breakdown as follows:  
+
+Count  | Variable Description
+------------- | -------------
+1 | row number
+1 | participant name  
+3 | time stamps  
+2 | measurement windows  
+152  | 38 x 4 accelerometer measurements
+1 | manner - the prediction variable  
+
+The downloaded testing file contains the 20 cases used for grading.  It does not contain the "classe" variable.  It will be renamed and model testing data will be split from the downloaded training data after cleaning.
+
+```{r}
+gradetest<-testing
+remove(testing)
+#Examine file
+summary<-summary(training)
+```
+
+There are `r sum(!complete.cases(training))` observations showing NA values. The summary() function revealed many variables with only or mostly missing or error values.  These variables, most of which were read as non-numeric data classes, will be removed before splitting. The row number, time stamps, and measurement window variables will also be removed.
+
+```{r}
+# find variables of type factor and remove.
+# keep good variables in data frame cleanTrain
+varclass <- sapply(training,class)
+#struct <- str(varclass)
+factors <- varclass=="factor"
+sumfactor <- sum(factors)
+cleanTrain <- training[,!factors]
+#prepare the 20 test cases to match
+cleangradetest <- gradetest[,!factors]
+
+#find variables with mostly NA and remove
+numColsWithNA <- sum(colSums(!is.na(cleanTrain))>19000)
+goodvars <- (colSums(!is.na(cleanTrain))>19000)
+sumgoodvars <- sum(goodvars)
+#cleanTrain <- cleanTrain[,colSums(!is.na(cleanTrain))>19000]
+cleanTrain <-  cleanTrain[,goodvars]
+cleangradetest <- cleangradetest[,goodvars]
+
+# remove row #, timestamps, measurment windows
+cleanTrain <- cleanTrain[,-(1:4)]
+cleangradetest <- cleangradetest[,-(1:4)]
+# add the classe variable back; was removed with factor vars 
+cleanTrain$classe <- training$classe
+#cleangradetest does not have a classe variable so no need to add back
+```
+ 
+```{r}
+# account for each variable in cleaned data
+forearm<-length(grep("forearm",names(cleanTrain)))
+dumbell<-length(grep("dumbbell",names(cleanTrain)))
+arm<-length(grep("_arm",names(cleanTrain)))
+belt<-length(grep("belt",names(cleanTrain)))
+```
+
+After cleaning, there are `r sum(!complete.cases(cleanTrain))` observations showing NA values.  Dimensions are `r dim(cleanTrain)`. The `r dim(cleanTrain)[2]` variables in the cleaned training data represent 13 measurements from each of the 4 accelerometers plus the prediction variable (classe).
+
+The testing data will now be split from the cleaned data set. 
+
+```{r}
+set.seed(8)
+inTrain <- createDataPartition(y=cleanTrain$classe,p=.7,list=FALSE)
+train2<- cleanTrain[inTrain,]
+test2<- cleanTrain[-inTrain,]
+summary <- summary(train2)
+```
+Now that clean model data have been split into training (dimensions `r dim(train2)`) and testing (dimensions `r dim(test2)`) sets, continue with exploratory data analysis. The summary() of the clean training set does not yield insight since the accelerometer readings are not easily interpret able. The plotting of variables is also not intuitive. Therefore, we'll look for correlation of variables to attempt to reduce the number of predictors.
+
+```{r}
+M <- abs(cor(train2[,-53]))
+diag(M) <- 0
+highlycorr<- which(M>.8, arr.ind=T)
+```
+
+Examining the correlation of the 52 predictors with each other shows that `r length(highlycorr)/2` unique pairs have an absolute correlation value greater than .8.  This indicates that Principal Component Analysis may be useful.
+
+```{r cache=TRUE}
+preProc <-preProcess(train2[,-53], method="pca", thresh=.95)
+trainPC <-predict(preProc, train2[,-53])
+modFit <- train(train2$classe ~ ., method="rf", data=trainPC)
+
+```
+Setting a preProcess variance threshold of 95% resulted in PCA needing `r preProc$numComp` components to explain the threshold variance. The train() model fit used Random Forest and default train() settings.  Random forest was selected because of its reputation for classification accuracy.
+
+Predicting with the training data resulted in the following confusion matrix, which showed 100% accuracy.
+
+```{r}
+cmTrain2 <- confusionMatrix(train2$classe,predict(modFit,trainPC))
+cmTrain2$table
+```
+
+
+Now, cross validate with the test data.
+```{r cache=TRUE}
+testPC <- predict(preProc,test2[,-53])
+cmTest2 <- confusionMatrix(test2$classe, predict(modFit, testPC))
+cmTest2$table
+cmTest2$overall[1]
+```
+
+Cross validating with the test data yielded accuracy of `r cmTest2$overall[1]`.  This implies an out-of-sample error rate of `r (1-cmTest2$overall[1])`.
+
+Other models and controls were tested. Those code chunks are available in the .Rmd file - the code is commented out to improve knit HTML timing.  
+
+A Random Forest model with cross validation resampling took about 12 minutes (versus 33 mins with the default resampling using bootstrapping) and had accuracy of .9735. This model looses little accuracy versus bootstrapping and improves speed by more than 50%.
+
+An rpart tree model could not classify exercise manner B.  That is, the tree only predicted A, C, D, or E. This of course is unacceptable.
+
+```{r echo=FALSE}
+### RF with cross validation resampling
+#fitControl <- trainControl(method = "cv")
+#modFitcv <- train(train2$classe ~ ., method="rf", trControl=fitControl, data=trainPC)
+#testPC <- predict(preProc,test2[,-53])
+#cmTest2cv <- confusionMatrix(test2$classe, predict(modFitcv, testPC))
+#cmTest2cv$table
+#cmTest2cv$overall[1]
+
+### CART - rpart
+#modFitrpart <- train(train2$classe ~ ., method="rpart", data=trainPC)
+#modFitrpart$finalModel
+#fancyRpartPlot(modFitrpart$finalModel)
+```
+
+Using the model with the best accuracy (Random Forest with default bootstrap resampling with accuracy of `r cmTest2$overall[1]`), we'll predict the 20 test cases provided by the assignment. The 20 test case data set was previously adjusted to match the variables in the clean training data, except for the prediction variable (classe). 
+
+The predictions are:
+```{r}
+cleangradetestPC <- predict(preProc,cleangradetest)
+assignmentPrediction <- predict(modFit, cleangradetestPC)
+assignmentPrediction
+```
+
+

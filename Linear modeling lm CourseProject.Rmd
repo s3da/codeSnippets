@@ -1,0 +1,139 @@
+# refer to course files for linear models
+
+### Data Processing
+The data set is contained in base R. Data set documentation can be found at this [link](http://stat.ethz.ch/R-manual/R-devel/library/datasets/html/mtcars.html).  The data was downloaded June 14, 2014.
+
+```{r echo=FALSE}
+df<-mtcars
+#s1 <- str(df)
+h1 <- head(df)
+```
+
+The data was read, and the structure and first few rows were examined. The data set contains `r dim(df)[1]` observations of `r dim(df)[2]` variables.  There were `r sum(!complete.cases(df))` observations showing NA values.  The data set appeared clean.  Categorical variables were converted to type factor. Transmission and engine configuration data were converted to the more reader friendly values defined in the documentation.
+
+All analysis code described in this report is contained in the .Rmd file used to produce the report and is reproducible. An appendix contains  figures referenced in the analysis. 
+
+Project instructions were to limit the report to 2 pages and to show only "figures" in the appendix. Therefore, code-chunk output has been suppressed using option echo=false. Also, most output from functions such as lm(), anova, Shapiro-wilks(), and other calculations was stored in variables and not shown in the appendix since only graphs and images fall within the definition of "figures" .
+
+```{r echo=FALSE}
+df$cyl <- as.factor(df$cyl); df$am[df$am==0]<-"automatic"; df$am[df$am==1]<-"manual"
+df$am <- as.factor(df$am) ; df$vs[df$vs==0]<-"v"
+df$vs[df$vs==1]<-"straight" ; df$vs <- as.factor(df$vs)
+df$gear <- as.factor(df$gear) ; df$carb <- as.factor(df$carb)
+```
+
+### Exploratory Analysis and Results
+A plot of the main variables of interest - mpg and transmission - gives a visualization of the data. (See Appendix Figure 1)
+
+The box plot indicates a possible difference in mean mpg. Mean MPG calculations for the two transmission types - automatic and manual - are, `r round(mean(df[df$am=="automatic","mpg"]),1)` to `r round(mean(df[df$am=="manual","mpg"]),1)`, respectively. An unadjusted linear regression model for MPG with  transmission as a categorical predictor shows:
+```{r echo=FALSE}
+fit <- lm(mpg ~ am, data=df)
+summary(fit)$coeff
+```
+The P-value for transmission type manual of `r round(summary(fit)$coeff[2,4],5)` indicates that the un-adjusted difference in means is significant when compared  to the reference transmission type, automatic. The model indicates that MPG increases by 7.245 MPG if the transmission is manual.
+
+Next, adjusted mean MPG was considered by evaluating the impact of other variables. 
+
+Scatterplots for every pairwise combination of data variables were produced (see Appendix Figure 2). MPG shows evidence of unadjusted linear or near-linear relationships with most of the other variables. Many variables show indications of linear relationships with each other. Therefore, it appears that confounding is possible and that the model to explain changes in MPG can be improved with other variables.
+
+The variables that visually showed the strongest relationship with MPG are: cylinders, displacement, horse power (HP), rear axle ratio, and weight. Cylinders, displacement, and horse power are visually positively correlated with each other. These relationships are consistent with [established engine design theory](http://auto.howstuffworks.com/engine7.htm) - HP increases as displacement increases; displacement increases as the number of cylinders increase. Calculation confirms the correlations:
+
+Variables  | Correlation  
+------------- | -------------  
+Cylinders & displacement:  |  `r round(cor(mtcars$cyl, mtcars$disp),3)`  
+Cylinders & HP:  |  `r round(cor(mtcars$cyl, mtcars$hp),3)`  
+Displacement & HP:  | `r round(cor(mtcars$disp, mtcars$hp),3)`  
+
+```{r  echo=FALSE}
+fit1 <- lm(mpg ~ am, data=df)
+fit2 <- update(fit1, mpg ~ am + hp)
+fit3 <- update(fit1, mpg ~ am + hp + cyl)
+fit4 <- update(fit1, mpg ~ am + hp + cyl + disp)
+an1 <- anova(fit1, fit2, fit3, fit4)
+```
+Nested Likelihood Ratio tests were used to determine whether any or all 3 variables contribute to the explanation of changes in MPG. The model that adds HP shows strong evidence (P-value < .001) and the model that adds cylinders shows moderate evidence (< .05) that each variable, respectively, explains changes in MPG.  Displacement showed no evidence that it contributes to the model.
+
+```{r echo=FALSE}
+fit3 <- update(fit1, mpg ~ am + hp + cyl)
+fit5 <- update(fit1, mpg ~ am + hp + cyl + wt)
+fit6 <- update(fit1, mpg ~ am + hp + cyl + wt + drat)
+an2<- anova(fit3, fit5, fit6)
+```
+Models that add weight and rear axle ratio to the contributing predictors were tested next. Nested model testing shows moderate evidence (P-value < .05) that weight improves the model.  The model with rear axle ratio shows no evidence of improving the model (P-value > .1). 
+
+Additional nested model testing of the remaining 4 variables in the data set showed no other models with P-values that indicated explanation of MPG.
+```{r echo=FALSE}
+fit5 <- update(fit1, mpg ~ am + hp + cyl + wt)
+fit7 <- update(fit1, mpg ~ am + hp + cyl + wt + qsec)
+fit8 <- update(fit1, mpg ~ am + hp + cyl + wt + qsec + vs)
+fit9 <- update(fit1, mpg ~ am + hp + cyl + wt + qsec + vs + gear)
+fit10 <- update(fit1, mpg ~ am + hp + cyl + wt + qsec + vs + gear + carb)
+an3<-anova(fit5, fit7, fit8, fit9, fit10)
+```
+
+The result of nested model testing produces a model with four variables and an adjusted R-squared of  `r summary(fit5)$adj.r.squared`.
+```{r echo=FALSE}
+summary(fit5)
+#summary(fit5)$call
+#summary(fit5)$coefficients
+```
+```{r echo=FALSE}
+st5 <- shapiro.test(fit5$residuals)
+mdfb5 <- apply(abs(dfbeta(fit5)),2,max)
+coef5 <- summary(fit5)$coefficients[,1]
+rat.mdfb5.coef5 <- mdfb5/coef5
+```
+
+Now that the model has been adjusted for confounders, the ammanual coefficient of `r summary(fit5)$coefficients[2]` indicates that a change in transmission type to manual improves MPG by only 1.8. Moreover, ammanual's P-value is not significant (> .10). In other words, transmission type does not show statistically significant evidence of explaining MPG when HP, cylinders, and weight are included.
+
+Diagnostics were used to check whether problems existed with the model. A plot of the residuals versus fitted values (see Appendix figure 3) showed no evidence of heteroscedasticity in the variation of the residuals. The Shapiro-Wilks test for normality of the residuals produces a large P-value (`r st5$p.value`), which fails to reject the null hypothesis that the residuals are normally distributed.
+
+Regarding influential outliers, the previous plot did not show evidence of obvious influential outliers. However, the ratio of the maximum absolute dfbeta values to the corresponding coefficients of the final model shows that the coefficients of ammanual (transmission) and cyl8 (cylinder) are impacted by `r round(rat.mdfb5.coef5[2]*100,2)`% and `r round(rat.mdfb5.coef5[5]*100,2)`%, respectively. This indicates possible influential outliers that would warrant additional testing in a more comprehensive study.  
+
+Overall, testing of the residuals does not lead to concerns with the inferences drawn from the 4 variables model.
+
+```{r echo=FALSE}
+fit21 <- lm (mpg ~ hp, data=df)
+fit22 <- update(fit21, mpg ~ hp + wt)
+fit23 <- update(fit21, mpg ~ hp + wt + am)
+an4<-anova(fit21, fit22, fit23)
+sfit22<-summary(fit22)
+```
+
+An additional round of tests was performed. Using insights gathered from previous exploratory analysis, Nested Model testing started with HP, and then added weight and transmission. The model with only HP showed that HP was significant (P-value < .001). The addition of weight was also significant (P-value < .001).  __The addition of transmission showed no evidence of explaining MPG (P-value > .10).__ This model with only the two predictors resulted in an adjusted R-squared of `r summary(fit22)$adj.r.squared`.  
+
+```{r echo=FALSE}
+summary(fit22)$call
+st22 <- shapiro.test(fit22$residuals)
+mdfb22 <- apply(abs(dfbeta(fit22)),2,max)
+coef22 <- summary(fit22)$coefficients[,1]
+rat.mdfb22.coef22 <- mdfb22/coef22
+```
+This model is more parsimonious (2 variables versus 4) and has an adjusted R-squared within a few points of the 4 variable model.
+
+Interestingly, the Shapiro-Wilks test produces a P-value of .034, which, while it still fails to reject the null hypothesis that the residuals are normally distributed at 95% confidence (two-tailed), is much closer to the tail than for the 4 variable model. For example, a 98% two-tailed confidence test would reject normality. One  possible inference is that the 4-variable model provides a better explanation of MPG than is indicated by the small increase in R-squared.
+
+This brief analysis shows that in a simple linear regression model with only transmission as a predictor, mpg shows a significant difference in  mean (automatic:`r round(mean(df[df$am=="automatic","mpg"]),1)` vs. manual: `r round(mean(df[df$am=="manual","mpg"]),1)`). However, adjusting for confounders indicates that weight, HP, and cylinders are predictors that show statistically significant evidence of explaining changes in MPG. Furthermore, an even more parsimonious two-variable model that excludes transmission type explains MPG almost as well as a model that includes transmission type, as measured by adjusted R-squared. Therefore, no conclusion can be made that one transmission type is better for mpg. 
+
+If Motor Trend wants a more definitive answer on whether transmission impacts MPG, I suggest a study that compares equivalent vehicle models that differ only by transmission type.  
+  
+  
+  
+****
+
+### Appendix of Figures and Tables
+
+#### Figure 1
+```{r echo=FALSE}
+plot(as.factor(df$am), df$mpg, xlab="Transmission", ylab ="Miles Per Gallon (mpg)")
+```
+
+#### Figure 2
+```{r echo=FALSE}
+pairs(df, panel = panel.smooth, main = "Scatterplots - all variables")
+```
+
+#### Figure 3
+```{r echo=FALSE}
+plot (fit5, which =1)
+```
