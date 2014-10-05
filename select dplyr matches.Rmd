@@ -1,0 +1,21 @@
+#Select dplyr NOTE Matches subfunction - see ?select
+
+## select: Pick columns by name
+
+* Base R approach is awkward to type and to read
+* dplyr approach uses similar syntax to `filter`
+* Like a SELECT in SQL
+
+```{r results='hide'}
+# base R approach to select DepTime, ArrTime, and FlightNum columns
+flights[, c("DepTime", "ArrTime", "FlightNum")]
+```
+
+```{r}
+# dplyr approach
+select(flights, DepTime, ArrTime, FlightNum)
+
+# use colon to select multiple contiguous columns, and use `contains` to match columns by name
+# note: `starts_with`, `ends_with`, and `matches` (for regular expressions) can also be used to match columns by name
+select(flights, Year:DayofMonth, contains("Taxi"), contains("Delay"))
+```

@@ -202,6 +202,11 @@ head(aggregate(ArrDelay ~ Dest, flights, mean))
 flights %>%
     group_by(Dest) %>%
     summarise(avg_delay = mean(ArrDelay, na.rm=TRUE))
+
+#test<-flights %>%
+#    group_by(Dest) %>%
+#    summarise(mean(ArrDelay, na.rm=TRUE))
+
 ```
 
 * `summarise_each` allows you to apply the same summary function to multiple columns at once

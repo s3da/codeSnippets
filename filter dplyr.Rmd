@@ -1,0 +1,21 @@
+#dplyr filter %in%
+
+
+```{r results='hide'}
+# base R approach to view all flights on January 1
+flights[flights$Month==1 & flights$DayofMonth==1, ]
+```
+
+```{r}
+# dplyr approach
+# note: you can use comma or ampersand to represent AND condition
+filter(flights, Month==1, DayofMonth==1)
+
+# use pipe for OR condition
+filter(flights, UniqueCarrier=="AA" | UniqueCarrier=="UA")
+```
+
+```{r results='hide'}
+# you can also use %in% operator
+filter(flights, UniqueCarrier %in% c("AA", "UA"))
+```
